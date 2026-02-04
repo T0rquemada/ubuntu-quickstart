@@ -1,19 +1,38 @@
-# Ubuntu Perosnal Quickstart
+# Ubuntu Personal Quickstart
 
-Installs:
+## Quickstart
+```sh
+git clone https://github.com/T0rquemada/ubuntu-personal-quickstart.git
+```
+```sh
+cd ubuntu-personal-quickstart
+```
+```sh
+chmod +x ./ubuntu.sh
+```
+```sh
+./ubuntu.sh
+```
+
+## Installs:
 Dev packages: 
-- Python
-- C/C++
+- Python (apt)
+- C/C++ (apt)
 
 Programs:
-- VScode (GitLens)
-- qBittorent
-- Obsidian
-- Android Studio
+Dev:
+- VScode / Zed
+Other:
+- Gnome Boxes (apt)
+- Libreoffice Calc & Writer
+- qBittorent (flatpak)
+- Obsidian (flatpak)
+- Bitwarden (flatpak)
+- FreeCad (flatpak)
 
 Communication
-- Signal
-- Discord
+- Signal (flatpak)
+- Discord (flatpak)
 
 Directories
 - Programs
