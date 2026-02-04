@@ -15,25 +15,30 @@ chmod +x ./ubuntu.sh
 ```
 
 ## Installs:
-Dev packages: 
+### Dev packages: 
 - Python (apt)
 - C/C++ (apt)
 
-Programs:
+### Programs:
 Dev:
 - VScode / Zed
-Other:
+
+Utils:
 - Gnome Boxes (apt)
 - Libreoffice Calc & Writer
-- qBittorent (flatpak)
+
+Personal:
 - Obsidian (flatpak)
 - Bitwarden (flatpak)
+
+Other:
+- qBittorent (flatpak)
 - FreeCad (flatpak)
 
-Communication
+Communication:
 - Signal (flatpak)
 - Discord (flatpak)
 
-Directories
+## Directories
 - Programs
 - SDK
