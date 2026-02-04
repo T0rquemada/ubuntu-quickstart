@@ -50,6 +50,9 @@ INSTALL_BITWARDEN=false
 INSTALL_FREECAD=false
 INSTALL_GNOME_BOXES=false
 INSTALL_LIBREOFFICE=false
+INSTALL_OBSIDIAN=false
+INSTALL_DISCORD=false
+INSTALL_QBITTORRENT=false
 
 # Print colored messages
 print_info() {
@@ -91,87 +94,109 @@ install_packages() {
 
     print_info "Installing $category packages..."
 
-    for package in "${packages[@]}"; do
-        print_info "Installing: $package"
-        if apt-get install -y "$package" >> /tmp/configurator.log 2>&1; then
-            print_success "$package installed"
-        else
-            print_warning "Failed to install $package (check /tmp/configurator.log)"
-        fi
-    done
+    if apt-get install -y "${packages[@]}" >> /tmp/configurator.log 2>&1; then
+        print_success "$category packages installed"
+    else
+        print_warning "Bulk install failed, trying individually..."
+        for package in "${packages[@]}"; do
+            print_info "Installing: $package"
+            if apt-get install -y "$package" >> /tmp/configurator.log 2>&1; then
+                print_success "$package installed"
+            else
+                print_warning "Failed to install $package (check /tmp/configurator.log)"
+            fi
+        done
+    fi
 }
 
 # Function to install VS Code
 install_vscode() {
+    if command -v code >/dev/null 2>&1; then
+        print_warning "VS Code is already installed. Skipping..."
+        return 0
+    fi
+
     print_info "Installing Visual Studio Code..."
-
     VSCODE_DEB="/tmp/vscode.deb"
-
-    # Видаляємо старий файл якщо існує
     rm -f "$VSCODE_DEB"
 
-    # Спроба 1: curl з прогрес-баром
+    # Try curl first
     if curl -L --fail --progress-bar -o "$VSCODE_DEB" \
         "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64" 2>&1 | tee -a /tmp/configurator.log; then
         print_success "Download completed"
+    # Fallback to wget
+    elif wget --progress=bar:force --tries=3 --timeout=60 \
+        -O "$VSCODE_DEB" \
+        "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64" 2>&1 | tee -a /tmp/configurator.log; then
+        print_success "Download completed"
     else
-        print_warning "curl failed, trying wget..."
-
-
-        # Спроба 2: wget з прогрес-баром
-        if wget --progress=bar:force --tries=3 --timeout=60 \
-            -O "$VSCODE_DEB" \
-            "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64" 2>&1 | tee -a /tmp/configurator.log; then
-            print_success "Download completed"
-        else
-            print_error "Failed to download VS Code"
-            return 1
-        fi
+        print_error "Failed to download VS Code"
+        return 1
     fi
 
-    # Перевірка чи файл завантажився
-    if [ ! -f "$VSCODE_DEB" ] || [ ! -s "$VSCODE_DEB" ]; then
+    if [ ! -s "$VSCODE_DEB" ]; then
         print_error "VS Code .deb file is missing or empty"
         return 1
     fi
 
-    # Встановлення
     print_info "Installing VS Code package..."
     if apt install -y "$VSCODE_DEB" >> /tmp/configurator.log 2>&1; then
         print_success "VS Code installed"
     else
-        print_error "Failed to install VS Code (check /tmp/configurator.log)"
+        print_error "Failed to install VS Code"
         rm -f "$VSCODE_DEB"
         return 1
     fi
-
     rm -f "$VSCODE_DEB"
 }
 
 install_zed() {
     print_info "Installing Zed editor..."
-    su - $REAL_USER -c 'curl -f https://zed.dev/install.sh | sh'
-    echo 'export PATH=$HOME/.local/bin:$PATH' >> "$USER_HOME/.bashrc"
-    print_success "Zed installed"
+    # Check if already installed to avoid redundant download
+    if [ -f "$USER_HOME/.local/bin/zed" ]; then
+        print_warning "Zed appears to be installed already."
+    else
+        su - $REAL_USER -c 'curl -f https://zed.dev/install.sh | sh'
+    fi
+    
+    # Check if PATH is already exported to prevent duplicates
+    if ! grep -q "export PATH=\$HOME/.local/bin:\$PATH" "$USER_HOME/.bashrc"; then
+        echo 'export PATH=$HOME/.local/bin:$PATH' >> "$USER_HOME/.bashrc"
+        print_success "Zed path added to .bashrc"
+    else
+        print_warning "Zed path already exists in .bashrc"
+    fi
+    
+    print_success "Zed configuration checked"
 }
 
 install_flatapk_apps() {
     echo ""
     echo "--- Installing Flatpak Apps ---"
-    if flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo >> /tmp/configurator.log 2>&1; then
-        print_success "Flathub repository added"
-    else
-        print_warning "Flathub repository may already exist"
+    
+    # Ensure flatpak is installed first
+    if ! command -v flatpak >/dev/null 2>&1; then
+        apt-get install -y flatpak >> /tmp/configurator.log 2>&1
     fi
 
-    print_info "Installing Obsidian..."
-    flatpak install -y flathub md.obsidian.Obsidian >> /tmp/configurator.log 2>&1 || print_warning "Obsidian installation failed"
+    if flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo >> /tmp/configurator.log 2>&1; then
+        print_success "Flathub repository checked"
+    fi
 
-    print_info "Installing Discord..."
-    flatpak install -y flathub com.discordapp.Discord >> /tmp/configurator.log 2>&1 || print_warning "Discord installation failed"
+    if $INSTALL_OBSIDIAN; then
+        print_info "Installing Obsidian..."
+        flatpak install -y flathub md.obsidian.Obsidian >> /tmp/configurator.log 2>&1 || print_warning "Obsidian installation failed"
+    fi
 
-    print_info "Installing qBittorrent..."
-    flatpak install -y flathub org.qbittorrent.qBittorrent >> /tmp/configurator.log 2>&1 || print_warning "qBittorrent installation failed"
+    if $INSTALL_DISCORD; then
+        print_info "Installing Discord..."
+        flatpak install -y flathub com.discordapp.Discord >> /tmp/configurator.log 2>&1 || print_warning "Discord installation failed"
+    fi
+
+    if $INSTALL_QBITTORRENT; then
+        print_info "Installing qBittorrent..."
+        flatpak install -y flathub org.qbittorrent.qBittorrent >> /tmp/configurator.log 2>&1 || print_warning "qBittorrent installation failed"
+    fi
 
     if $INSTALL_BITWARDEN; then
         print_info "Installing Bitwarden..."
@@ -182,8 +207,8 @@ install_flatapk_apps() {
         print_info "Installing FreeCad..."
         flatpak install -y flathub org.freecad.FreeCAD >> /tmp/configurator.log 2>&1 || print_warning "FreeCad installation failed"
     fi
-
-    print_success "Flatpak apps installed"
+    
+    print_success "Flatpak apps processing complete"
 }
 
 ask_editor_choice() {
@@ -195,29 +220,18 @@ ask_editor_choice() {
     echo "========================================="
     echo "  1) Visual Studio Code"
     echo "  2) Zed"
-    echo "  3) Skip (don't install any editor)"
+    echo "  3) Both"
+    echo "  4) Skip"
     echo "========================================="
 
     while true; do
-        read -p "$(echo -e ${BLUE}Select an option [1-3]:${NC} )" choice
+        read -p "$(echo -e ${BLUE}Select an option [1-4]:${NC} )" choice
         case $choice in
-            1 )
-                INSTALL_VSCODE=true
-                print_success "Visual Studio Code selected"
-                return 0
-                ;;
-            2 )
-                INSTALL_ZED=true
-                print_success "Zed selected"
-                return 0
-                ;;
-            3 )
-                print_info "Skipping code editor installation"
-                return 0
-                ;;
-            * )
-                echo "Please enter 1, 2, or 3."
-                ;;
+            1 ) INSTALL_VSCODE=true; return 0 ;;
+            2 ) INSTALL_ZED=true; return 0 ;;
+            3 ) INSTALL_VSCODE=true; INSTALL_ZED=true; return 0 ;;
+            4 ) print_info "Skipping code editors"; return 0 ;;
+            * ) echo "Please enter 1, 2, 3 or 4." ;;
         esac
     done
 }
@@ -227,37 +241,37 @@ install_signal() {
     echo "--- Installing Signal Desktop ---"
     print_info "Adding Signal repository..."
 
-    if wget -O- https://updates.signal.org/desktop/apt/keys.asc 2>/dev/null | gpg --dearmor > /tmp/signal-desktop-keyring.gpg 2>&1; then
-        cat /tmp/signal-desktop-keyring.gpg | tee /usr/share/keyrings/signal-desktop-keyring.gpg > /dev/null
-
-        wget -O /tmp/signal-desktop.sources https://updates.signal.org/static/desktop/apt/signal-desktop.sources 2>/dev/null
-        cat /tmp/signal-desktop.sources | tee /etc/apt/sources.list.d/signal-desktop.sources > /dev/null
-
-        print_info "Installing Signal Desktop..."
-        apt-get update >> /tmp/configurator.log 2>&1
-
-        if apt-get install -y signal-desktop >> /tmp/configurator.log 2>&1; then
-            print_success "Signal Desktop installed"
+    # Download key only if missing
+    if [ ! -f /usr/share/keyrings/signal-desktop-keyring.gpg ]; then
+        if wget -O- https://updates.signal.org/desktop/apt/keys.asc 2>/dev/null | gpg --dearmor > /tmp/signal-desktop-keyring.gpg 2>&1; then
+            cat /tmp/signal-desktop-keyring.gpg | tee /usr/share/keyrings/signal-desktop-keyring.gpg > /dev/null
+            rm -f /tmp/signal-desktop-keyring.gpg
         else
-            print_warning "Signal installation failed"
+            print_error "Failed to download Signal key"
+            return 1
         fi
+    fi
 
-        rm -f /tmp/signal-desktop-keyring.gpg /tmp/signal-desktop.sources
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/signal-desktop-keyring.gpg] https://updates.signal.org/desktop/apt xenial main" | \
+        tee /etc/apt/sources.list.d/signal-desktop.sources > /dev/null
+
+    print_info "Updating apt cache for Signal..."
+    apt-get update >> /tmp/configurator.log 2>&1
+
+    if apt-get install -y signal-desktop >> /tmp/configurator.log 2>&1; then
+        print_success "Signal Desktop installed"
     else
-        print_warning "Failed to add Signal repository"
+        print_warning "Signal installation failed"
     fi
 }
 
 install_gnome_boxes() {
     echo ""
     echo "--- Installing GNOME Boxes ---"
-    print_info "Installing GNOME Boxes (Virtual Machine Manager)..."
-
     if apt-get install -y gnome-boxes >> /tmp/configurator.log 2>&1; then
         print_success "GNOME Boxes installed"
     else
         print_error "GNOME Boxes installation failed"
-        return 1
     fi
 }
 
@@ -277,63 +291,56 @@ main() {
 
     print_info "Installing for user: $REAL_USER"
     print_info "Home directory: $USER_HOME"
-    print_warning "Make sure you have an active internet connection."
+    
+    # Check internet
+    if ! ping -c 1 google.com &> /dev/null; then
+        print_error "No internet connection detected!"
+        exit 1
+    fi
+
     echo ""
-
     echo "--- Create Directories ---"
-    mkdir -p "$USER_HOME/Programs"
-    mkdir -p "$USER_HOME/SDK"
+    # Only create if they don't exist
+    [ ! -d "$USER_HOME/Programs" ] && mkdir -p "$USER_HOME/Programs"
+    [ ! -d "$USER_HOME/SDK" ] && mkdir -p "$USER_HOME/SDK"
 
-    # Налаштовуємо права для користувача
     chown $REAL_USER:$REAL_USER "$USER_HOME/Programs"
     chown $REAL_USER:$REAL_USER "$USER_HOME/SDK"
 
     # Ask user for preferences
     echo "--- Development Environments ---"
-    if ask_yes_no "Install Python development tools?"; then
-        INSTALL_PYTHON=true
-    fi
+    ask_yes_no "Install Python development tools?" && INSTALL_PYTHON=true
+    ask_yes_no "Install C/C++ development tools?" && INSTALL_C=true
 
-    if ask_yes_no "Install C/C++ development tools?"; then
-        INSTALL_C=true
-    fi
-
-    #Ask for code editor choice FIRST
     ask_editor_choice
 
-    if ask_yes_no "Install Signal desktop?"; then
-        INSTALL_SIGNAL=true
-    fi
-
-    if ask_yes_no "Install Bitwarden?"; then
-        INSTALL_BITWARDEN=true
-    fi
-
-    if ask_yes_no "Install FreeCad?"; then
-        INSTALL_FREECAD=true
-    fi
-
-     if ask_yes_no "Install GNOME Boxes (Virtual Machines)?"; then
-         INSTALL_GNOME_BOXES=true
-     fi
-
-     if ask_yes_no "Install LibreOffice Calc and Writer?"; then
-         INSTALL_LIBREOFFICE=true
-     fi
+    echo ""
+    echo "--- Applications ---"
+    ask_yes_no "Install Signal desktop?" && INSTALL_SIGNAL=true
+    ask_yes_no "Install Bitwarden?" && INSTALL_BITWARDEN=true
+    ask_yes_no "Install FreeCad?" && INSTALL_FREECAD=true
+    ask_yes_no "Install Obsidian?" && INSTALL_OBSIDIAN=true
+    ask_yes_no "Install Discord?" && INSTALL_DISCORD=true
+    ask_yes_no "Install qBittorrent?" && INSTALL_QBITTORRENT=true
+    ask_yes_no "Install GNOME Boxes?" && INSTALL_GNOME_BOXES=true
+    ask_yes_no "Install LibreOffice?" && INSTALL_LIBREOFFICE=true
 
     echo ""
     echo "========================================="
     echo "Installation Summary:"
     echo "========================================="
-    $INSTALL_PYTHON && echo "  ✓ Python development tools"
-    $INSTALL_C && echo "  ✓ C/C++ development tools"
+    $INSTALL_PYTHON && echo "  ✓ Python tools"
+    $INSTALL_C && echo "  ✓ C/C++ tools"
     $INSTALL_VSCODE && echo "  ✓ Visual Studio Code"
     $INSTALL_ZED && echo "  ✓ Zed editor"
     $INSTALL_SIGNAL && echo "  ✓ Signal"
     $INSTALL_BITWARDEN && echo "  ✓ Bitwarden"
     $INSTALL_FREECAD && echo "  ✓ FreeCad"
+    $INSTALL_OBSIDIAN && echo "  ✓ Obsidian"
+    $INSTALL_DISCORD && echo "  ✓ Discord"
+    $INSTALL_QBITTORRENT && echo "  ✓ qBittorrent"
     $INSTALL_GNOME_BOXES && echo "  ✓ GNOME Boxes"
-    $INSTALL_LIBREOFFICE && echo "  ✓ LibreOffice Calc and Writer"
+    $INSTALL_LIBREOFFICE && echo "  ✓ LibreOffice"
     echo "========================================="
     echo ""
 
@@ -350,66 +357,31 @@ main() {
     if apt-get update >> /tmp/configurator.log 2>&1; then
         print_success "Package list updated"
     else
-        print_warning "apt-get update had some issues, continuing anyway..."
+        print_warning "apt-get update had issues (check log)"
     fi
 
-    # Install selected packages
+    # Install base packages
     echo ""
     echo "--- Starting Installation ---"
-
-    # Default packages
     print_info "Installing base packages..."
-    for pkg in flatpak wget curl git vlc openssh-client; do
-        if apt-get install -y "$pkg" >> /tmp/configurator.log 2>&1; then
-            print_success "$pkg installed"
-        else
-            print_warning "$pkg failed to install (may already be installed)"
-        fi
-    done
+    # Installed all in one go for efficiency
+    if apt-get install -y flatpak wget curl git vlc openssh-client >> /tmp/configurator.log 2>&1; then
+        print_success "Base packages installed"
+    else
+        print_warning "Base packages installation had issues"
+    fi
 
-    # Flatpak
+    # Run installation groups
     install_flatapk_apps
 
-    # Development tools
-    if $INSTALL_PYTHON; then
-        echo ""
-        install_packages "Python" "${PYTHON_PACKAGES[@]}"
-    fi
-
-    if $INSTALL_C; then
-        echo ""
-        install_packages "C/C++" "${C_PACKAGES[@]}"
-    fi
-
-    if $INSTALL_VSCODE; then
-        echo ""
-        echo "--- Installing Visual Studio Code ---"
-        install_vscode || print_error "VS Code installation failed, continuing..."
-    fi
-
-    if $INSTALL_ZED; then
-        echo ""
-        echo "--- Installing Zed Editor ---"
-        install_zed || print_error "Zed installation failed, continuing..."
-    fi
-
-    # Signal Messenger
-    if $INSTALL_SIGNAL; then
-        echo ""
-        install_signal
-    fi
-
-    # GNOME Boxes
-    if $INSTALL_GNOME_BOXES; then
-        echo ""
-        install_gnome_boxes
-    fi
-
-    # LibreOffice
-    if $INSTALL_LIBREOFFICE; then
-        echo ""
-        install_packages "LibreOffice" "${LIBREOFFICE_PACKAGES[@]}"
-    fi
+    if $INSTALL_PYTHON; then echo ""; install_packages "Python" "${PYTHON_PACKAGES[@]}"; fi
+    if $INSTALL_C; then echo ""; install_packages "C/C++" "${C_PACKAGES[@]}"; fi
+    
+    if $INSTALL_VSCODE; then echo ""; install_vscode; fi
+    if $INSTALL_ZED; then echo ""; install_zed; fi
+    if $INSTALL_SIGNAL; then echo ""; install_signal; fi
+    if $INSTALL_GNOME_BOXES; then echo ""; install_gnome_boxes; fi
+    if $INSTALL_LIBREOFFICE; then echo ""; install_packages "LibreOffice" "${LIBREOFFICE_PACKAGES[@]}"; fi
 
     # Final cleanup
     echo ""
@@ -420,26 +392,23 @@ main() {
     # Show installed versions
     echo ""
     echo "========================================="
-    echo "--- Installed Versions ---"
+    echo "--- Status Check ---"
     echo "========================================="
-    $INSTALL_PYTHON && python3 --version 2>/dev/null && pip3 --version 2>/dev/null
-    $INSTALL_C && gcc --version 2>/dev/null | head -1
+    $INSTALL_PYTHON && echo "Python: $(python3 --version 2>/dev/null)"
+    $INSTALL_C && echo "GCC: $(gcc --version 2>/dev/null | head -1 | awk '{print $4}')"
     echo "========================================="
 
-    # Set GRUB timeout to 0 seconds
+    # GRUB Config
     echo ""
     print_info "Configuring GRUB timeout..."
-    sed -i 's/GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' /etc/default/grub
+    # Use 1 instead of 0 to allow emergency recovery if needed
+    sed -i 's/GRUB_TIMEOUT=.*/GRUB_TIMEOUT=1/' /etc/default/grub
     update-grub >> /tmp/configurator.log 2>&1
-    print_success "GRUB configured"
+    print_success "GRUB timeout set to 1s"
 
     echo ""
-    echo "========================================="
-    print_success "Installation Complete!"
-    echo "========================================="
-    print_info "Log file saved to: /tmp/configurator.log"
-    echo ""
-    print_success "All done! You may need to restart your session for some changes to take effect."
+    print_success "All done! Log file: /tmp/configurator.log"
+    echo "Please restart your session."
 }
 
 main
