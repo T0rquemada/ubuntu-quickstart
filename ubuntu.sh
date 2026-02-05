@@ -53,6 +53,8 @@ INSTALL_LIBREOFFICE=false
 INSTALL_OBSIDIAN=false
 INSTALL_DISCORD=false
 INSTALL_QBITTORRENT=false
+INSTALL_ANDROID_STUDIO=false
+INSTALL_OLLAMA=false
 
 # Print colored messages
 print_info() {
@@ -158,7 +160,7 @@ install_zed() {
     else
         su - $REAL_USER -c 'curl -f https://zed.dev/install.sh | sh'
     fi
-    
+
     # Check if PATH is already exported to prevent duplicates
     if ! grep -q "export PATH=\$HOME/.local/bin:\$PATH" "$USER_HOME/.bashrc"; then
         echo 'export PATH=$HOME/.local/bin:$PATH' >> "$USER_HOME/.bashrc"
@@ -166,14 +168,78 @@ install_zed() {
     else
         print_warning "Zed path already exists in .bashrc"
     fi
-    
+
     print_success "Zed configuration checked"
+}
+
+install_android_studio() {
+    echo "--- Installing Android Studio (Native) ---"
+
+    # 1. Latest stable version link (Ladybug | 2024.2.2 Patch 1 as of current)
+    local DOWNLOAD_URL="https://redirector.gvt1.com/edgedl/android/studio/ide-zips/2024.2.2.13/android-studio-2024.2.2.13-linux.tar.gz"
+    local TEMP_FILE="/tmp/android-studio.tar.gz"
+    local INSTALL_DIR="/opt/android-studio"
+    local DESKTOP_FILE="/usr/share/applications/android-studio.desktop"
+
+    # 2. Install required 32-bit dependencies (Recommended by Google for Linux)
+    echo "Installing required dependencies..."
+    apt-get update > /dev/null
+    apt-get install -y libc6:i386 libncurses5:i386 libstdc++6:i386 lib32z1 libbz2-1.0 > /dev/null 2>&1 || echo "Notice: Some 32-bit libraries were skipped (common on newer OS versions)"
+
+    # 3. Downloading the archive
+    echo "Downloading Android Studio..."
+    if wget --show-progress -O "$TEMP_FILE" "$DOWNLOAD_URL"; then
+        echo "Download completed."
+    else
+        echo "Error: Failed to download Android Studio!"
+        return 1
+    fi
+
+    # 4. Remove previous installation if exists and extract
+    if [ -d "$INSTALL_DIR" ]; then
+        echo "Removing old version from $INSTALL_DIR..."
+        rm -rf "$INSTALL_DIR"
+    fi
+
+    echo "Extracting to /opt..."
+    # The archive contains a folder named 'android-studio', so we extract directly to /opt
+    tar -xzf "$TEMP_FILE" -C /opt
+
+    # 5. Create the .desktop file (Application Menu Icon)
+    echo "Creating desktop shortcut..."
+    cat <<EOF > "$DESKTOP_FILE"
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Android Studio
+Comment=Android Development Environment
+Exec="/opt/android-studio/bin/studio.sh" %f
+Icon=/opt/android-studio/bin/studio.png
+Categories=Development;IDE;
+Terminal=false
+StartupNotify=true
+StartupWMClass=jetbrains-studio
+EOF
+
+    # 6. Set ownership to the real user so the IDE can update itself
+    if [ -n "$SUDO_USER" ]; then
+        chown -R "$SUDO_USER":"$SUDO_USER" "$INSTALL_DIR"
+    fi
+
+    # Cleanup
+    rm -f "$TEMP_FILE"
+
+    echo "Installation complete! Android Studio should now appear in your application menu."
+}
+
+install_ollama() {
+    curl -fsSL https://ollama.com/install.sh | sh
 }
 
 install_flatapk_apps() {
     echo ""
     echo "--- Installing Flatpak Apps ---"
-    
+
     # Ensure flatpak is installed first
     if ! command -v flatpak >/dev/null 2>&1; then
         apt-get install -y flatpak >> /tmp/configurator.log 2>&1
@@ -207,7 +273,7 @@ install_flatapk_apps() {
         print_info "Installing FreeCad..."
         flatpak install -y flathub org.freecad.FreeCAD >> /tmp/configurator.log 2>&1 || print_warning "FreeCad installation failed"
     fi
-    
+
     print_success "Flatpak apps processing complete"
 }
 
@@ -291,18 +357,12 @@ main() {
 
     print_info "Installing for user: $REAL_USER"
     print_info "Home directory: $USER_HOME"
-    
+
     # Check internet
     if ! ping -c 1 google.com &> /dev/null; then
         print_error "No internet connection detected!"
         exit 1
     fi
-
-    echo ""
-    echo "--- Create Directories ---"
-    # Only create if they don't exist
-    [ ! -d "$USER_HOME/Programs" ] && mkdir -p "$USER_HOME/Programs"
-    [ ! -d "$USER_HOME/SDK" ] && mkdir -p "$USER_HOME/SDK"
 
     chown $REAL_USER:$REAL_USER "$USER_HOME/Programs"
     chown $REAL_USER:$REAL_USER "$USER_HOME/SDK"
@@ -313,6 +373,8 @@ main() {
     ask_yes_no "Install C/C++ development tools?" && INSTALL_C=true
 
     ask_editor_choice
+    ask_yes_no "Install Android Studio?" && INSTALL_ANDROID_STUDIO=true
+    ask_yes_no "Install Ollama?" && INSTALL_OLLAMA=true
 
     echo ""
     echo "--- Applications ---"
@@ -341,6 +403,8 @@ main() {
     $INSTALL_QBITTORRENT && echo "  ✓ qBittorrent"
     $INSTALL_GNOME_BOXES && echo "  ✓ GNOME Boxes"
     $INSTALL_LIBREOFFICE && echo "  ✓ LibreOffice"
+    $INSTALL_ANDROID_STUDIO && echo "  ✓ Android Studio"
+    $INSTALL_OLLAMA && echo "  ✓ Ollama"
     echo "========================================="
     echo ""
 
@@ -376,12 +440,14 @@ main() {
 
     if $INSTALL_PYTHON; then echo ""; install_packages "Python" "${PYTHON_PACKAGES[@]}"; fi
     if $INSTALL_C; then echo ""; install_packages "C/C++" "${C_PACKAGES[@]}"; fi
-    
+
     if $INSTALL_VSCODE; then echo ""; install_vscode; fi
     if $INSTALL_ZED; then echo ""; install_zed; fi
     if $INSTALL_SIGNAL; then echo ""; install_signal; fi
     if $INSTALL_GNOME_BOXES; then echo ""; install_gnome_boxes; fi
     if $INSTALL_LIBREOFFICE; then echo ""; install_packages "LibreOffice" "${LIBREOFFICE_PACKAGES[@]}"; fi
+    if $INSTALL_ANDROID_STUDIO; then echo ""; install_android_studio; fi
+    if $INSTALL_OLLAMA; then echo ""; install_ollama; fi
 
     # Final cleanup
     echo ""

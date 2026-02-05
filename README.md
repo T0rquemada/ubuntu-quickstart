@@ -21,11 +21,12 @@ chmod +x ./ubuntu.sh
 
 ### Programs:
 Dev:
-- VScode / Zed
+- VScode / Zed / Both
 
 Utils:
 - Gnome Boxes (apt)
-- Libreoffice Calc & Writer
+- Libreoffice Calc & Writer (apt)
+- Ollama
 
 Personal:
 - Obsidian (flatpak)
@@ -38,7 +39,3 @@ Other:
 Communication:
 - Signal (flatpak)
 - Discord (flatpak)
-
-## Directories
-- Programs
-- SDK
