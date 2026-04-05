@@ -3,6 +3,9 @@
 # Ubuntu System Configurator
 # Must be run with sudo privileges
 
+# Source installation functions
+source "$(dirname "$0")/install_functions.sh"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -35,6 +38,13 @@ C_PACKAGES=(
     "cmake"
 )
 
+PHP_PACKAGES=(
+    "php"
+    "composer"
+    "php-curl"
+    "php-xml"
+)
+
 LIBREOFFICE_PACKAGES=(
     "libreoffice-calc"
     "libreoffice-writer"
@@ -43,8 +53,10 @@ LIBREOFFICE_PACKAGES=(
 # User choices
 INSTALL_PYTHON=false
 INSTALL_C=false
+INSTALL_PHP=false
 INSTALL_VSCODE=false
 INSTALL_ZED=false
+INSTALL_WINDSURF=false
 INSTALL_SIGNAL=false
 INSTALL_BITWARDEN=false
 INSTALL_FREECAD=false
@@ -54,7 +66,6 @@ INSTALL_OBSIDIAN=false
 INSTALL_DISCORD=false
 INSTALL_QBITTORRENT=false
 INSTALL_ANDROID_STUDIO=false
-INSTALL_OLLAMA=false
 
 # Print colored messages
 print_info() {
@@ -88,195 +99,6 @@ ask_yes_no() {
     done
 }
 
-# Function to install packages from array
-install_packages() {
-    local category="$1"
-    shift
-    local packages=("$@")
-
-    print_info "Installing $category packages..."
-
-    if apt-get install -y "${packages[@]}" >> /tmp/configurator.log 2>&1; then
-        print_success "$category packages installed"
-    else
-        print_warning "Bulk install failed, trying individually..."
-        for package in "${packages[@]}"; do
-            print_info "Installing: $package"
-            if apt-get install -y "$package" >> /tmp/configurator.log 2>&1; then
-                print_success "$package installed"
-            else
-                print_warning "Failed to install $package (check /tmp/configurator.log)"
-            fi
-        done
-    fi
-}
-
-# Function to install VS Code
-install_vscode() {
-    if command -v code >/dev/null 2>&1; then
-        print_warning "VS Code is already installed. Skipping..."
-        return 0
-    fi
-
-    print_info "Installing Visual Studio Code..."
-    VSCODE_DEB="/tmp/vscode.deb"
-    rm -f "$VSCODE_DEB"
-
-    # Try curl first
-    if curl -L --fail --progress-bar -o "$VSCODE_DEB" \
-        "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64" 2>&1 | tee -a /tmp/configurator.log; then
-        print_success "Download completed"
-    # Fallback to wget
-    elif wget --progress=bar:force --tries=3 --timeout=60 \
-        -O "$VSCODE_DEB" \
-        "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64" 2>&1 | tee -a /tmp/configurator.log; then
-        print_success "Download completed"
-    else
-        print_error "Failed to download VS Code"
-        return 1
-    fi
-
-    if [ ! -s "$VSCODE_DEB" ]; then
-        print_error "VS Code .deb file is missing or empty"
-        return 1
-    fi
-
-    print_info "Installing VS Code package..."
-    if apt install -y "$VSCODE_DEB" >> /tmp/configurator.log 2>&1; then
-        print_success "VS Code installed"
-    else
-        print_error "Failed to install VS Code"
-        rm -f "$VSCODE_DEB"
-        return 1
-    fi
-    rm -f "$VSCODE_DEB"
-}
-
-install_zed() {
-    print_info "Installing Zed editor..."
-    # Check if already installed to avoid redundant download
-    if [ -f "$USER_HOME/.local/bin/zed" ]; then
-        print_warning "Zed appears to be installed already."
-    else
-        su - $REAL_USER -c 'curl -f https://zed.dev/install.sh | sh'
-    fi
-
-    # Check if PATH is already exported to prevent duplicates
-    if ! grep -q "export PATH=\$HOME/.local/bin:\$PATH" "$USER_HOME/.bashrc"; then
-        echo 'export PATH=$HOME/.local/bin:$PATH' >> "$USER_HOME/.bashrc"
-        print_success "Zed path added to .bashrc"
-    else
-        print_warning "Zed path already exists in .bashrc"
-    fi
-
-    print_success "Zed configuration checked"
-}
-
-install_android_studio() {
-    echo "--- Installing Android Studio (Native) ---"
-
-    # 1. Latest stable version link (Ladybug | 2024.2.2 Patch 1 as of current)
-    local DOWNLOAD_URL="https://redirector.gvt1.com/edgedl/android/studio/ide-zips/2024.2.2.13/android-studio-2024.2.2.13-linux.tar.gz"
-    local TEMP_FILE="/tmp/android-studio.tar.gz"
-    local INSTALL_DIR="/opt/android-studio"
-    local DESKTOP_FILE="/usr/share/applications/android-studio.desktop"
-
-    # 2. Install required 32-bit dependencies (Recommended by Google for Linux)
-    echo "Installing required dependencies..."
-    apt-get update > /dev/null
-    apt-get install -y libc6:i386 libncurses5:i386 libstdc++6:i386 lib32z1 libbz2-1.0 > /dev/null 2>&1 || echo "Notice: Some 32-bit libraries were skipped (common on newer OS versions)"
-
-    # 3. Downloading the archive
-    echo "Downloading Android Studio..."
-    if wget --show-progress -O "$TEMP_FILE" "$DOWNLOAD_URL"; then
-        echo "Download completed."
-    else
-        echo "Error: Failed to download Android Studio!"
-        return 1
-    fi
-
-    # 4. Remove previous installation if exists and extract
-    if [ -d "$INSTALL_DIR" ]; then
-        echo "Removing old version from $INSTALL_DIR..."
-        rm -rf "$INSTALL_DIR"
-    fi
-
-    echo "Extracting to /opt..."
-    # The archive contains a folder named 'android-studio', so we extract directly to /opt
-    tar -xzf "$TEMP_FILE" -C /opt
-
-    # 5. Create the .desktop file (Application Menu Icon)
-    echo "Creating desktop shortcut..."
-    cat <<EOF > "$DESKTOP_FILE"
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=Android Studio
-Comment=Android Development Environment
-Exec="/opt/android-studio/bin/studio.sh" %f
-Icon=/opt/android-studio/bin/studio.png
-Categories=Development;IDE;
-Terminal=false
-StartupNotify=true
-StartupWMClass=jetbrains-studio
-EOF
-
-    # 6. Set ownership to the real user so the IDE can update itself
-    if [ -n "$SUDO_USER" ]; then
-        chown -R "$SUDO_USER":"$SUDO_USER" "$INSTALL_DIR"
-    fi
-
-    # Cleanup
-    rm -f "$TEMP_FILE"
-
-    echo "Installation complete! Android Studio should now appear in your application menu."
-}
-
-install_ollama() {
-    curl -fsSL https://ollama.com/install.sh | sh
-}
-
-install_flatapk_apps() {
-    echo ""
-    echo "--- Installing Flatpak Apps ---"
-
-    # Ensure flatpak is installed first
-    if ! command -v flatpak >/dev/null 2>&1; then
-        apt-get install -y flatpak >> /tmp/configurator.log 2>&1
-    fi
-
-    if flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo >> /tmp/configurator.log 2>&1; then
-        print_success "Flathub repository checked"
-    fi
-
-    if $INSTALL_OBSIDIAN; then
-        print_info "Installing Obsidian..."
-        flatpak install -y flathub md.obsidian.Obsidian >> /tmp/configurator.log 2>&1 || print_warning "Obsidian installation failed"
-    fi
-
-    if $INSTALL_DISCORD; then
-        print_info "Installing Discord..."
-        flatpak install -y flathub com.discordapp.Discord >> /tmp/configurator.log 2>&1 || print_warning "Discord installation failed"
-    fi
-
-    if $INSTALL_QBITTORRENT; then
-        print_info "Installing qBittorrent..."
-        flatpak install -y flathub org.qbittorrent.qBittorrent >> /tmp/configurator.log 2>&1 || print_warning "qBittorrent installation failed"
-    fi
-
-    if $INSTALL_BITWARDEN; then
-        print_info "Installing Bitwarden..."
-        flatpak install -y flathub com.bitwarden.desktop >> /tmp/configurator.log 2>&1 || print_warning "Bitwarden installation failed"
-    fi
-
-    if $INSTALL_FREECAD; then
-        print_info "Installing FreeCad..."
-        flatpak install -y flathub org.freecad.FreeCAD >> /tmp/configurator.log 2>&1 || print_warning "FreeCad installation failed"
-    fi
-
-    print_success "Flatpak apps processing complete"
-}
-
 ask_editor_choice() {
     local choice
 
@@ -286,7 +108,7 @@ ask_editor_choice() {
     echo "========================================="
     echo "  1) Visual Studio Code"
     echo "  2) Zed"
-    echo "  3) Both"
+    echo "  3) Windsurf"
     echo "  4) Skip"
     echo "========================================="
 
@@ -295,50 +117,11 @@ ask_editor_choice() {
         case $choice in
             1 ) INSTALL_VSCODE=true; return 0 ;;
             2 ) INSTALL_ZED=true; return 0 ;;
-            3 ) INSTALL_VSCODE=true; INSTALL_ZED=true; return 0 ;;
+            3 ) INSTALL_WINDSURF=true; return 0 ;;
             4 ) print_info "Skipping code editors"; return 0 ;;
             * ) echo "Please enter 1, 2, 3 or 4." ;;
         esac
     done
-}
-
-install_signal() {
-    echo ""
-    echo "--- Installing Signal Desktop ---"
-    print_info "Adding Signal repository..."
-
-    # Download key only if missing
-    if [ ! -f /usr/share/keyrings/signal-desktop-keyring.gpg ]; then
-        if wget -O- https://updates.signal.org/desktop/apt/keys.asc 2>/dev/null | gpg --dearmor > /tmp/signal-desktop-keyring.gpg 2>&1; then
-            cat /tmp/signal-desktop-keyring.gpg | tee /usr/share/keyrings/signal-desktop-keyring.gpg > /dev/null
-            rm -f /tmp/signal-desktop-keyring.gpg
-        else
-            print_error "Failed to download Signal key"
-            return 1
-        fi
-    fi
-
-    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/signal-desktop-keyring.gpg] https://updates.signal.org/desktop/apt xenial main" | \
-        tee /etc/apt/sources.list.d/signal-desktop.sources > /dev/null
-
-    print_info "Updating apt cache for Signal..."
-    apt-get update >> /tmp/configurator.log 2>&1
-
-    if apt-get install -y signal-desktop >> /tmp/configurator.log 2>&1; then
-        print_success "Signal Desktop installed"
-    else
-        print_warning "Signal installation failed"
-    fi
-}
-
-install_gnome_boxes() {
-    echo ""
-    echo "--- Installing GNOME Boxes ---"
-    if apt-get install -y gnome-boxes >> /tmp/configurator.log 2>&1; then
-        print_success "GNOME Boxes installed"
-    else
-        print_error "GNOME Boxes installation failed"
-    fi
 }
 
 main() {
@@ -371,10 +154,10 @@ main() {
     echo "--- Development Environments ---"
     ask_yes_no "Install Python development tools?" && INSTALL_PYTHON=true
     ask_yes_no "Install C/C++ development tools?" && INSTALL_C=true
+    ask_yes_no "Install PHP development tools?" && INSTALL_PHP=true
 
     ask_editor_choice
     ask_yes_no "Install Android Studio?" && INSTALL_ANDROID_STUDIO=true
-    ask_yes_no "Install Ollama?" && INSTALL_OLLAMA=true
 
     echo ""
     echo "--- Applications ---"
@@ -393,8 +176,10 @@ main() {
     echo "========================================="
     $INSTALL_PYTHON && echo "  ✓ Python tools"
     $INSTALL_C && echo "  ✓ C/C++ tools"
+    $INSTALL_PHP && echo "  ✓ PHP tools"
     $INSTALL_VSCODE && echo "  ✓ Visual Studio Code"
     $INSTALL_ZED && echo "  ✓ Zed editor"
+    $INSTALL_WINDSURF && echo "  ✓ Windsurf"
     $INSTALL_SIGNAL && echo "  ✓ Signal"
     $INSTALL_BITWARDEN && echo "  ✓ Bitwarden"
     $INSTALL_FREECAD && echo "  ✓ FreeCad"
@@ -404,7 +189,6 @@ main() {
     $INSTALL_GNOME_BOXES && echo "  ✓ GNOME Boxes"
     $INSTALL_LIBREOFFICE && echo "  ✓ LibreOffice"
     $INSTALL_ANDROID_STUDIO && echo "  ✓ Android Studio"
-    $INSTALL_OLLAMA && echo "  ✓ Ollama"
     echo "========================================="
     echo ""
 
@@ -436,18 +220,19 @@ main() {
     fi
 
     # Run installation groups
-    install_flatapk_apps
+    install_flatpak_apps
 
     if $INSTALL_PYTHON; then echo ""; install_packages "Python" "${PYTHON_PACKAGES[@]}"; fi
     if $INSTALL_C; then echo ""; install_packages "C/C++" "${C_PACKAGES[@]}"; fi
+    if $INSTALL_PHP; then echo ""; install_packages "PHP" "${PHP_PACKAGES[@]}"; fi
 
     if $INSTALL_VSCODE; then echo ""; install_vscode; fi
     if $INSTALL_ZED; then echo ""; install_zed; fi
+    if $INSTALL_WINDSURF; then echo ""; install_windsurf; fi
     if $INSTALL_SIGNAL; then echo ""; install_signal; fi
     if $INSTALL_GNOME_BOXES; then echo ""; install_gnome_boxes; fi
     if $INSTALL_LIBREOFFICE; then echo ""; install_packages "LibreOffice" "${LIBREOFFICE_PACKAGES[@]}"; fi
     if $INSTALL_ANDROID_STUDIO; then echo ""; install_android_studio; fi
-    if $INSTALL_OLLAMA; then echo ""; install_ollama; fi
 
     # Final cleanup
     echo ""

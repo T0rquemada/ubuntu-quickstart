@@ -18,15 +18,15 @@ chmod +x ./ubuntu.sh
 ### Dev packages: 
 - Python (apt)
 - C/C++ (apt)
+- PHP (apt)
 
 ### Programs:
 Dev:
-- VScode / Zed / Both
+- VScode / Zed / Windsurf
 
 Utils:
 - Gnome Boxes (apt)
 - Libreoffice Calc & Writer (apt)
-- Ollama
 
 Personal:
 - Obsidian (flatpak)
@@ -37,5 +37,10 @@ Other:
 - FreeCad (flatpak)
 
 Communication:
-- Signal (flatpak)
+- Signal
 - Discord (flatpak)
+
+## ToDO:
+- [ ] Rust
+- [ ] Laravel
+- [X] PHP
