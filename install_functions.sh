@@ -285,3 +285,60 @@ install_gnome_boxes() {
         print_error "GNOME Boxes installation failed"
     fi
 }
+
+remove_firefox() {
+    echo ""
+    print_info "Removing Firefox..."
+    if command -v snap >/dev/null 2>&1; then
+        snap remove firefox >> /tmp/configurator.log 2>&1 || true
+    fi
+    local firefox_pkgs
+    firefox_pkgs=$(dpkg-query -W -f='${Package}\n' 2>/dev/null | grep -E '^firefox' || true)
+    if [ -n "$firefox_pkgs" ]; then
+        apt-get purge -y $firefox_pkgs >> /tmp/configurator.log 2>&1 || print_warning "Some Firefox .deb packages could not be purged"
+    fi
+    apt-get autoremove -y >> /tmp/configurator.log 2>&1 || true
+    print_success "Firefox removal finished"
+}
+
+install_brave() {
+    echo ""
+    echo "--- Installing Brave Browser ---"
+    print_info "Running Brave install script..."
+    if ( set -o pipefail; curl -fsS https://dl.brave.com/install.sh | sh ) >> /tmp/configurator.log 2>&1; then
+        print_success "Brave Browser installed"
+        return 0
+    else
+        print_error "Brave Browser installation failed"
+        return 1
+    fi
+}
+
+install_mullvad_browser() {
+    echo ""
+    echo "--- Installing Mullvad Browser ---"
+    print_info "Adding Mullvad apt repository..."
+
+    if ! curl -fsSLo /usr/share/keyrings/mullvad-keyring.asc \
+        "https://repository.mullvad.net/deb/mullvad-keyring.asc" >> /tmp/configurator.log 2>&1; then
+        print_error "Failed to download Mullvad keyring"
+        return 1
+    fi
+
+    echo "deb [signed-by=/usr/share/keyrings/mullvad-keyring.asc arch=$(dpkg --print-architecture)] https://repository.mullvad.net/deb/stable stable main" | \
+        tee /etc/apt/sources.list.d/mullvad.list > /dev/null
+
+    if apt-get update >> /tmp/configurator.log 2>&1; then
+        print_success "Package list updated (Mullvad)"
+    else
+        print_warning "apt-get update had issues after adding Mullvad repo"
+    fi
+
+    if apt-get install -y mullvad-browser >> /tmp/configurator.log 2>&1; then
+        print_success "Mullvad Browser installed (stable)"
+        return 0
+    else
+        print_error "Mullvad Browser installation failed"
+        return 1
+    fi
+}

@@ -66,6 +66,8 @@ INSTALL_OBSIDIAN=false
 INSTALL_DISCORD=false
 INSTALL_QBITTORRENT=false
 INSTALL_ANDROID_STUDIO=false
+INSTALL_BRAVE=false
+INSTALL_MULLVAD_BROWSER=false
 
 # Print colored messages
 print_info() {
@@ -95,6 +97,29 @@ ask_yes_no() {
             [Yy]* ) return 0;;
             [Nn]* ) return 1;;
             * ) echo "Please answer y or n.";;
+        esac
+    done
+}
+
+ask_browser_choice() {
+    local choice
+
+    echo ""
+    echo "========================================="
+    echo "    Web Browser"
+    echo "========================================="
+    echo "  1) Keep Firefox (default Ubuntu browser)"
+    echo "  2) Install Brave (Firefox will be removed after install)"
+    echo "  3) Install Mullvad Browser stable (Firefox will be removed after install)"
+    echo "========================================="
+
+    while true; do
+        read -p "$(echo -e ${BLUE}Select an option [1-3]:${NC} )" choice
+        case $choice in
+            1 ) print_info "Keeping Firefox"; return 0 ;;
+            2 ) INSTALL_BRAVE=true; return 0 ;;
+            3 ) INSTALL_MULLVAD_BROWSER=true; return 0 ;;
+            * ) echo "Please enter 1, 2, or 3." ;;
         esac
     done
 }
@@ -161,6 +186,7 @@ main() {
 
     echo ""
     echo "--- Applications ---"
+    ask_browser_choice
     ask_yes_no "Install Signal desktop?" && INSTALL_SIGNAL=true
     ask_yes_no "Install Bitwarden?" && INSTALL_BITWARDEN=true
     ask_yes_no "Install FreeCad?" && INSTALL_FREECAD=true
@@ -189,6 +215,9 @@ main() {
     $INSTALL_GNOME_BOXES && echo "  ✓ GNOME Boxes"
     $INSTALL_LIBREOFFICE && echo "  ✓ LibreOffice"
     $INSTALL_ANDROID_STUDIO && echo "  ✓ Android Studio"
+    $INSTALL_BRAVE && echo "  ✓ Brave Browser (Firefox removed)"
+    $INSTALL_MULLVAD_BROWSER && echo "  ✓ Mullvad Browser (Firefox removed)"
+    ! $INSTALL_BRAVE && ! $INSTALL_MULLVAD_BROWSER && echo "  ✓ Web browser: Firefox (unchanged)"
     echo "========================================="
     echo ""
 
@@ -233,6 +262,15 @@ main() {
     if $INSTALL_GNOME_BOXES; then echo ""; install_gnome_boxes; fi
     if $INSTALL_LIBREOFFICE; then echo ""; install_packages "LibreOffice" "${LIBREOFFICE_PACKAGES[@]}"; fi
     if $INSTALL_ANDROID_STUDIO; then echo ""; install_android_studio; fi
+
+    if $INSTALL_BRAVE; then
+        echo ""
+        if install_brave; then remove_firefox; fi
+    fi
+    if $INSTALL_MULLVAD_BROWSER; then
+        echo ""
+        if install_mullvad_browser; then remove_firefox; fi
+    fi
 
     # Final cleanup
     echo ""
